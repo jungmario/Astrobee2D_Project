@@ -1,0 +1,8 @@
+[deps]
+DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
+ECOS = "e2685f51-7e38-5353-a97d-a921fd2c8199"
+JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+SCPToolbox = "bd2bc758-a5dc-11eb-050f-6b2434548817"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
