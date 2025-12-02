@@ -87,7 +87,7 @@ end
 
 1. MATLAB 실행  
 2. 프로젝트 폴더로 이동  
-3. `plot_astrobee.m` 실행  
+3. `trajectory.m` 실행  
 
 ---
 
