@@ -98,54 +98,74 @@ function set_integration!(pbm::TrajectoryProblem)::Nothing
     return nothing
 end
 
-# test/examples/astrobee_se2/definition.jl
-
 function set_guess!(pbm::TrajectoryProblem)::Nothing
-
     problem_set_guess!(
         pbm,
         (N, pbm) -> begin
-            # 1. 데이터 가져오기
             veh = pbm.mdl.vehicle
             env = pbm.mdl.env
             traj = pbm.mdl.traj
 
-            # 2. 파라미터(p) 및 시간 초기화
             p = zeros(pbm.np)
-            # 시간 고정 문제 (tf = 41.0)
             flight_time = 0.5 * (traj.tf_min + traj.tf_max)
             p[veh.id_t] = flight_time
+            dt = flight_time / (N - 1)
 
-            # 3. 상태(x) 초기화: 직선 경로 (Straight Line)
             x = zeros(pbm.nx, N)
-
-            # (1) 위치 (r): 시작점(r0)에서 끝점(rf)까지 직선 긋기
-            # straightline_interpolate는 SCPToolbox 내장 함수
-            x[veh.id_r, :] = straightline_interpolate(traj.r0, traj.rf, N)
-
-            # (2) 속도 (v): 평균 속도로 초기화 (중요!)
-            # 위치는 변하는데 속도가 0이면 물리적으로 말이 안 되어서 솔버가 힘들어합니다.
-            # v = (끝점 - 시작점) / 비행시간
-            avg_vel = (traj.rf - traj.r0) / flight_time
             
-            # 모든 스텝에 평균 속도 할당
-            for k = 1:N
-                x[veh.id_v, k] = avg_vel
+            # -----------------------------------------------------
+            # [스마트 초기화 로직 복구]
+            # -----------------------------------------------------
+            if isempty(traj.waypoints)
+                # CASE 1: 경유지 없음 -> 직선 경로 (속도 포함)
+                x[veh.id_r, :] = straightline_interpolate(traj.r0, traj.rf, N)
+                avg_vel = (traj.rf - traj.r0) / flight_time
+                for k = 1:N; x[veh.id_v, k] = avg_vel; end
+                
+            else
+                # CASE 2: 경유지 있음 -> 점들을 잇는 경로 생성
+                points = [traj.r0]
+                append!(points, traj.waypoints)
+                push!(points, traj.rf)
+                
+                num_segments = length(points) - 1
+                indices = round.(Int, range(1, N, length=num_segments+1))
+                
+                for i = 1:num_segments
+                    idx_start = indices[i]
+                    idx_end = indices[i+1]
+                    len = idx_end - idx_start + 1
+                    
+                    p_start = points[i]
+                    p_end = points[i+1]
+                    
+                    # 위치 보간
+                    x[veh.id_r, idx_start:idx_end] = straightline_interpolate(p_start, p_end, len)
+                    
+                    # 속도 계산
+                    segment_dist = p_end - p_start
+                    segment_time = (len - 1) * dt
+                    segment_vel = (segment_time > 1e-6) ? (segment_dist / segment_time) : zeros(2)
+                    
+                    for k = idx_start:idx_end
+                        x[veh.id_v, k] = segment_vel
+                    end
+                end
             end
+            # -----------------------------------------------------
 
-            # (3) 각도(θ) 및 각속도(ω): 0으로 초기화
-            # 회전은 충돌과 무관하므로 0으로 둬도 됩니다.
             x[veh.id_θ, :] .= 0.0
             x[veh.id_ω, :] .= 0.0
 
-            # 4. 방 로직(δ) 초기화 (기존 코드 유지)
             if isdefined(veh, :id_δ)
                 r = view(x, veh.id_r, :) 
                 δ = reshape(view(p, veh.id_δ), env.n_iss, N)
                 for i = 1:env.n_iss
                     roomi = env.iss[i] 
                     for k = 1:N
-                        # 2D 거리 계산
+                        # 타원체 거리를 고려한 δ 계산 (Generic)
+                        # r이 타원 안에 있으면 E(r) < 1 => δ > 0 (안전)
+                        # 여기서는 단순하게 방(Room) 기준 거리로 계산
                         relative_pos = (r[:, k] - roomi.c) ./ roomi.s
                         dist = norm(relative_pos, Inf)
                         δ[i, k] = 1.0 - dist
@@ -153,13 +173,10 @@ function set_guess!(pbm::TrajectoryProblem)::Nothing
                 end
             end
 
-            # 5. 입력(u) 초기화: 0으로 시작
             u = zeros(pbm.nu, N)
-
             return x, u, p
         end,
     )
-
     return nothing
 end
 

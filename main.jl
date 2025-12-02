@@ -12,7 +12,7 @@ include("src/parameters.jl")
 include("src/definition.jl")
 include("src/solver.jl")
 
-println(">>> [3/3] 최적화 시작! (N=$(get_config().N))")
+println(">>> 최적화 시작! (N=$(get_config().N))")
 config = get_config()
 (mdl, sol, history) = gusto(config)
 
@@ -39,6 +39,14 @@ if sol.status == "SCP_SOLVED" || sol.status == "OPTIMAL"
     obs_header = ["ox" "oy" "rx" "ry"]
     writedlm("astrobee_config.csv", [obs_header; obs_matrix], ',')
     println(">>> 환경 저장 완료: astrobee_config.csv")
+
+    # [추가] 방 크기 정보(Room Size) 저장
+    # 1x4 행렬: [min_x, min_y, max_x, max_y]
+    room_data = [config.room_min[1] config.room_min[2] config.room_max[1] config.room_max[2]]
+    room_header = ["min_x" "min_y" "max_x" "max_y"]
+    
+    writedlm("astrobee_room.csv", [room_header; room_data], ',')
+    println(">>> 방 크기 저장 완료: astrobee_room.csv")
     
 else
     println("\n>>> ㅠㅠ 실패 상태: $(sol.status)")

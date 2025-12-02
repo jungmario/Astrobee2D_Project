@@ -1,6 +1,9 @@
+# src/parameters.jl
 using LinearAlgebra
 using SCPToolbox
 using .UserConfig
+
+# ..:: Data structures ::..
 
 struct Astrobee2DParameters
     id_r::IntRange; id_v::IntRange; id_θ::Int; id_ω::Int
@@ -17,6 +20,9 @@ mutable struct Astrobee2DTrajectoryParameters
     r0::RealVector; rf::RealVector; v0::RealVector; vf::RealVector
     θ0::Real; θf::Real; ω0::Real; ωf::Real
     tf_min::Real; tf_max::Real; γ::Real; hom::Real; ε_sdf::Real
+    
+    # [복구] 경유지 저장 필드
+    waypoints::Vector{Vector{Float64}}
 end
 
 struct Astrobee2DProblem
@@ -25,12 +31,15 @@ struct Astrobee2DProblem
     traj::Astrobee2DTrajectoryParameters
 end
 
+# ..:: Methods ::..
+
 function Astrobee2DEnvironmentParameters(iss, obs)
     return Astrobee2DEnvironmentParameters(obs, iss, length(obs), length(iss))
 end
 
 function Astrobee2DProblem(config::AstrobeeConfig)::Astrobee2DProblem
-    # 1. 환경 설정 (Inflation 적용)
+
+    # 1. 환경 설정 (타원형 장애물 지원)
     r_robot = 0.215
     clearance = 0.05
     
@@ -38,21 +47,19 @@ function Astrobee2DProblem(config::AstrobeeConfig)::Astrobee2DProblem
     
     # [수정] (x, y, rx, ry) 4개 변수로 받기
     for (ox, oy, rx_obs, ry_obs) in config.obstacles
-        
-        # 가로, 세로 각각 안전 거리 확보 (팽창)
+        # 가로/세로 각각 팽창 (Inflation)
         rx_safe = rx_obs + r_robot + clearance
         ry_safe = ry_obs + r_robot + clearance
         
-        # [핵심] 대각 행렬에 서로 다른 값을 넣으면 타원이 됩니다!
-        # H = diag(1/rx, 1/ry)
+        # 타원 행렬 생성
         H_obs = diagm([1.0/rx_safe, 1.0/ry_safe])
-        
         push!(obs, Ellipsoid(H_obs, [ox; oy]))
     end
 
     iss_rooms = [Hyperrectangle(config.room_min, config.room_max)]
     env = Astrobee2DEnvironmentParameters(iss_rooms, obs)
 
+    # 2. 로봇 파라미터
     id_r, id_θ = 1:2, 3
     id_v, id_ω = 4:5, 6
     id_T, id_M = 1:2, 3
@@ -65,12 +72,17 @@ function Astrobee2DProblem(config::AstrobeeConfig)::Astrobee2DProblem
 
     veh = Astrobee2DParameters(id_r, id_v, id_θ, id_ω, id_T, id_M, id_t, id_δ, v_max, ω_max, T_max, M_max, mass, J)
 
+    # 3. 궤적 파라미터 (경유지 포함)
+    # [수정] Tuple 리스트 -> Vector 리스트 변환
+    wp_data = [collect(wp) for wp in config.waypoints]
+
     traj = Astrobee2DTrajectoryParameters(
         config.start_state[1:2], config.goal_state[1:2],
         config.start_state[4:5], config.goal_state[4:5],
         config.start_state[3], config.goal_state[3],
         config.start_state[6], config.goal_state[6],
-        config.tf, config.tf, 0.1, 50.0, 1e-4
+        config.tf, config.tf, 0.1, 50.0, 1e-4,
+        wp_data # [복구] 경유지 전달
     )
 
     return Astrobee2DProblem(veh, env, traj)
